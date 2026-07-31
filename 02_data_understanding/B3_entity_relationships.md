@@ -13,7 +13,7 @@ Understanding these relationships is essential for accurate SQL analysis, databa
 
 The project uses the following core relationships.
 
-| Parent Table | Child Table | Relationship | Type |
+| Parent Table | Child Table | Relationship Key | Type |
 |--------------|-------------|--------------|------|
 | customers | orders | customer_id | One-to-Many |
 | orders | order_items | order_id | One-to-Many |
@@ -93,7 +93,7 @@ A seller may fulfil many order items across multiple customer orders.
 
 An order may contain one or more payment records.
 
-An order may contain multiple payment records, for example when more than one payment method is used.
+An order may contain multiple payment records, for example when payment is split across multiple payment sequences or payment methods.
 
 ## Orders → Reviews
 
