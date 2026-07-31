@@ -70,9 +70,9 @@ Seller information is referenced whenever a seller fulfils an order item.
 
 ## payments
 
-Each row represents one payment record associated with an order.
+Each row represents one payment transaction associated with an order.
 
-Some orders contain multiple payment records because payment can be split across multiple payment sequences.
+Some orders contain multiple payment transaction because payment can be split across multiple payment sequences.
 
 ## reviews
 
