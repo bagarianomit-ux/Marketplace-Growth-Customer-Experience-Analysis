@@ -29,12 +29,11 @@ Answering these questions requires integrating data from multiple operational sy
 
 The primary goal of this project is to identify high-impact opportunities to improve marketplace revenue and customer experience through comprehensive analysis of customer behaviour, seller performance, product trends, operational efficiency, and marketplace transactions.
 
-The project follows a complete analytics workflow, beginning with business understanding and progressing through data validation, database design, SQL analysis, dashboard development, and business recommendations.
-
+The project follows a complete analytics workflow, beginning with business understanding and progressing through data understanding, data validation, database design, SQL analysis, dashboard development, and business recommendations.
 
 ## Project Scope
 
-This analysis focuses on the Olist Brazilian E-Commerce dataset covering marketplace activity between 2016 and 2018.
+This analysis focuses on the Olist Brazilian E-Commerce dataset, which captures marketplace activity between 2016 and 2018.
 
 The project includes analysis across multiple business areas, including:
 
@@ -50,7 +49,7 @@ The project includes analysis across multiple business areas, including:
 The objective is not only to describe historical performance but also to generate actionable business recommendations that support marketplace growth and improve the overall customer experience.
 
 
-## Expected Business Value
+## Business Impact
 
 The insights generated throughout this project are intended to support data-driven decision making by helping stakeholders:
 
