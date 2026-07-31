@@ -4,8 +4,7 @@
 
 The insights generated from this project are intended to support multiple teams responsible for managing marketplace performance, customer experience, and operational efficiency.
 
-Each stakeholder group has different business objectives and therefore requires different analytical insights to support data-driven decision making.
-
+Although each team has different priorities, they rely on the same underlying marketplace data to support their decisions.
 
 ## Executive Team
 
@@ -15,7 +14,7 @@ The Executive Team is responsible for defining the overall business strategy, mo
 
 ### Business Questions
 
-- Is the marketplace growing sustainably?
+- How has marketplace performance changed over time?
 - Which business areas contribute most to revenue?
 - What are the biggest opportunities for improving customer experience?
 - Which operational issues have the greatest business impact?
@@ -30,11 +29,11 @@ This project provides a high-level view of marketplace performance by combining 
 
 ### Responsibilities
 
-The Growth Team focuses on increasing marketplace revenue by improving customer acquisition, customer retention, and purchasing behaviour.
+The Growth Team focuses on increasing marketplace revenue by improving customer buying behaviour, repeat sales, and sustainable revenue growth. 
 
 ### Business Questions
 
-- Which customers generate the highest value?
+- Which customers make repeat purchases most frequently?
 - Which product categories contribute the most revenue?
 - Which purchasing patterns create growth opportunities?
 - Which payment methods are most commonly used?
@@ -52,7 +51,7 @@ The Operations Team is responsible for ensuring efficient order processing, deli
 
 ### Business Questions
 
-- Which orders experience delivery delays?
+- Which factors are associated with delivery delays?
 - Which regions experience operational inefficiencies?
 - How does delivery performance affect customer satisfaction?
 - Which operational bottlenecks should be addressed first?
