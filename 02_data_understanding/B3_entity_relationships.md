@@ -146,6 +146,13 @@ Seller ZIP code prefixes can also be linked to the geolocation table to support 
 
 Like the customer relationship, this is a logical lookup relationship rather than an enforced database constraint.
 
+## Entity Relationship Diagram
+
+The following diagram provides a visual representation of the relationships between the tables in the Olist dataset.
+
+![Entity Relationship Diagram](entity_relationship_diagram.png)
+
+**Figure 1.** Entity Relationship Diagram for the Olist Marketplace dataset.
 
 # Relationship Types Used
 
