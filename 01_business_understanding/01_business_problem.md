@@ -11,7 +11,7 @@ To support these decisions, marketplace leaders require reliable, data-driven in
 
 ## Business Problem
 
-Although the marketplace records every customer interaction and transaction, the raw operational data alone does not explain why business performance changes or where the greatest improvement opportunities exist.
+Although the marketplace captures extensive operational and transactional data, it does not explain why business performance changes or where the greatest improvement opportunities exist.
 
 Key business questions include:
 
@@ -27,9 +27,9 @@ Answering these questions requires integrating data from multiple operational sy
 
 ## Project Goal
 
-The primary goal of this project is to identify the biggest opportunities to improve marketplace revenue and customer experience through comprehensive analysis of customer behaviour, seller performance, product trends, operational efficiency, and marketplace transactions.
+The primary goal of this project is to identify high-impact opportunities to improve marketplace revenue and customer experience through comprehensive analysis of customer behaviour, seller performance, product trends, operational efficiency, and marketplace transactions.
 
-The project follows a complete analytics workflow, beginning with business understanding and progressing through data validation, database design, SQL analysis, and interactive dashboard development.
+The project follows a complete analytics workflow, beginning with business understanding and progressing through data validation, database design, SQL analysis, dashboard development, and business recommendations.
 
 
 ## Project Scope
