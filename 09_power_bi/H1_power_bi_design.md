@@ -4248,6 +4248,4571 @@ DimSeller
 
 This structure is intentionally small, controlled, and aligned with the analytical grains established throughout the project.
 
+## 8. Core Measure Strategy
+
+The semantic model will use explicit DAX measures for important business metrics rather than relying on implicit Power BI aggregations.
+
+The purpose of the measure layer is to ensure that:
+
+* the same KPI has one reusable definition;
+* business populations remain explicit;
+* measures behave correctly under report filters;
+* metric names preserve the terminology established during SQL analysis;
+* Power BI results can be reconciled directly to validated SQL outputs.
+
+Measures will be added only where they support a defined business question or report requirement.
+
+---
+
+### 8.1 Measure Organization
+
+A dedicated measures table will be created in Power BI:
+
+```text
+Measures
+```
+
+It will not participate in any model relationships.
+
+Measures will be organized into display folders such as:
+
+```text
+Marketplace
+Customer
+Delivery & CX
+Category
+Seller
+Payment
+Matched Period
+```
+
+This keeps business calculations separate from raw fact-table columns and makes the field list easier to understand.
+
+---
+
+### 8.2 Measure Naming Convention
+
+Measure names will use clear business terminology rather than abbreviated technical names.
+
+Examples:
+
+```text
+Completed Orders
+Completed Unique Customers
+Completed Item Sales Value
+Late Delivery Rate
+Category Item Sales Value
+Active Sellers
+Paid Orders
+```
+
+The following naming distinctions will remain explicit.
+
+#### Recorded
+
+```text
+Recorded
+```
+
+means the metric uses all applicable recorded order activity unless another population is stated.
+
+Example:
+
+```text
+Recorded Orders
+```
+
+#### Completed
+
+```text
+Completed
+```
+
+means:
+
+```text
+order_status = 'delivered'
+```
+
+Example:
+
+```text
+Completed Orders
+```
+
+#### Eligible
+
+```text
+Eligible
+```
+
+means the observation meets the requirements for a specific analysis.
+
+Example:
+
+```text
+Delivery Eligible Orders
+```
+
+#### Paid
+
+```text
+Paid
+```
+
+refers to orders represented in the payment fact.
+
+Example:
+
+```text
+Paid Orders
+```
+
+#### Item Sales Value
+
+The term:
+
+```text
+Item Sales Value
+```
+
+will continue to represent:
+
+```text
+SUM(order_items.price)
+```
+
+It will not be renamed:
+
+```text
+Revenue
+Profit
+GMV
+Margin
+```
+
+unless the underlying business definition supports that terminology.
+
+---
+
+### 8.3 Base Measures Before Derived Measures
+
+Where practical, derived KPIs will be built from simpler reusable measures.
+
+For example:
+
+```text
+Completed Orders
+        +
+Recorded Orders
+        ↓
+Completion Rate
+```
+
+rather than repeating filtering logic independently inside every measure.
+
+Similarly:
+
+```text
+Late Orders
+        +
+Delivery Eligible Orders
+        ↓
+Late Delivery Rate
+```
+
+This reduces duplicated DAX logic and makes validation easier.
+
+---
+
+## 8.4 Marketplace Measures
+
+The primary marketplace measures will come from:
+
+```text
+bi_fact_orders
+```
+
+### Required Measures
+
+| Measure                                    | Definition                                    |
+| ------------------------------------------ | --------------------------------------------- |
+| `Recorded Orders`                          | Distinct recorded orders                      |
+| `Completed Orders`                         | Orders with delivered status                  |
+| `Completion Rate`                          | Completed Orders ÷ Recorded Orders            |
+| `Recorded Items`                           | Sum of recorded item count                    |
+| `Completed Items`                          | Item count from delivered orders              |
+| `Recorded Item Sales Value`                | Sum of recorded item sales value              |
+| `Completed Item Sales Value`               | Item sales value from delivered orders        |
+| `Avg Item Sales Value per Completed Order` | Completed Item Sales Value ÷ Completed Orders |
+
+Expected full-population reconciliations include:
+
+```text
+Recorded Orders
+= 99,441
+
+Completed Orders
+= 96,478
+
+Completion Rate
+≈ 97.02%
+
+Recorded Items
+= 112,650
+
+Completed Items
+= 110,197
+
+Recorded Item Sales Value
+= 13,591,643.70
+
+Completed Item Sales Value
+= 13,221,498.11
+```
+
+These measures form the primary commercial KPI layer.
+
+---
+
+## 8.5 Customer Measures
+
+Customer measures will also use:
+
+```text
+bi_fact_orders
+```
+
+and:
+
+```text
+customer_unique_id
+```
+
+directly.
+
+### Required Measures
+
+| Measure                            | Purpose                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| `Recorded Unique Customers`        | Distinct customers across recorded orders                                      |
+| `Completed Unique Customers`       | Distinct customers across delivered orders                                     |
+| `Observed Repeat Customers`        | Customers with more than one completed order in the current analytical context |
+| `Observed Repeat Customer Rate`    | Repeat customers ÷ completed unique customers                                  |
+| `One-Time Completed Customers`     | Customers with exactly one completed order                                     |
+| `Repeat-Customer Completed Orders` | Completed orders belonging to customers with more than one completed order     |
+| `Repeat-Customer Order Share`      | Repeat-customer completed orders ÷ completed orders                            |
+
+Known full-population targets include:
+
+```text
+Recorded Unique Customers
+= 96,096
+
+Completed Unique Customers
+= 93,358
+
+Observed Repeat Customers
+= 2,801
+
+Observed Repeat Customer Rate
+≈ 3.00%
+
+One-Time Completed Customers
+= 90,557
+
+Repeat-Customer Completed Orders
+= 5,921
+
+Repeat-Customer Order Share
+≈ 6.14%
+```
+
+---
+
+### 8.5.1 Dynamic Repeat-Customer Logic
+
+Repeat-customer status will not be stored as a static source column.
+
+It will be calculated from completed-order frequency within the relevant analytical context.
+
+Conceptually:
+
+```text
+customer_unique_id
+        ↓
+count completed orders
+        ↓
+> 1
+        ↓
+observed repeat customer
+```
+
+This means repeat behaviour can respond appropriately to date context.
+
+For example:
+
+```text
+Customer A
+
+Jan–Jun
+→ 1 completed order
+→ one-time within that context
+
+Jan–Aug
+→ 2 completed orders
+→ repeat within that context
+```
+
+This behaviour is intentional.
+
+The resulting measure should be described as:
+
+> **observed repeat purchasing within the selected analytical context**
+
+rather than a formal retention measure.
+
+---
+
+### 8.5.2 Customer Merchandise Measures
+
+The following measures may also be created where required by the Growth & Customers page:
+
+```text
+One-Time Customer Item Sales Value
+Repeat-Customer Item Sales Value
+Repeat-Customer Item Sales Value Share
+Avg Completed Orders per Customer
+Avg Completed Orders per Repeat Customer
+```
+
+Known full-population reconciliation includes:
+
+```text
+Repeat-Customer Item Sales Value
+= 728,408.75
+
+Repeat-Customer Item Sales Value Share
+≈ 5.51%
+```
+
+These are supporting analytical measures rather than executive-level KPIs.
+
+---
+
+## 8.6 Delivery and Customer Experience Measures
+
+Delivery measures will use:
+
+```text
+bi_fact_orders
+```
+
+and the delivery-eligibility logic established in SQL.
+
+### Required Delivery Measures
+
+| Measure                    | Definition                                        |
+| -------------------------- | ------------------------------------------------- |
+| `Delivery Eligible Orders` | Orders eligible for delivery-reliability analysis |
+| `On-Time or Early Orders`  | Eligible orders not delivered after estimate      |
+| `Late Orders`              | Eligible orders delivered after estimate          |
+| `Late Delivery Rate`       | Late Orders ÷ Delivery Eligible Orders            |
+| `Avg Delivery Days`        | Average delivery duration among eligible orders   |
+| `Avg Late Days`            | Average positive delay among late orders          |
+
+Known reconciliation targets include:
+
+```text
+Delivery Eligible Orders
+= 96,470
+
+On-Time or Early Orders
+= 88,644
+
+Late Orders
+= 7,826
+
+Late Delivery Rate
+≈ 8.11%
+
+Avg Delivery Days
+≈ 12.56
+
+Avg Late Days
+≈ 9.55
+```
+
+---
+
+### 8.6.1 Review Measures
+
+Required customer-experience measures will include:
+
+| Measure              | Definition                           |
+| -------------------- | ------------------------------------ |
+| `Reviewed Orders`    | Orders with a representative review  |
+| `Avg Review Score`   | Average representative review score  |
+| `Low Review Orders`  | Reviewed orders with score 1 or 2    |
+| `Low Review Rate`    | Low Review Orders ÷ Reviewed Orders  |
+| `High Review Orders` | Reviewed orders with score 4 or 5    |
+| `High Review Rate`   | High Review Orders ÷ Reviewed Orders |
+
+These measures can be evaluated under:
+
+```text
+delay_band
+customer_state
+purchase period
+```
+
+without creating separate review calculations for each segment.
+
+For delivery-specific review analysis, the reporting context will use the eligible delivery population where required.
+
+---
+
+### 8.6.2 Delay Severity
+
+`delay_band` already exists as a SQL-prepared fact attribute.
+
+DAX will not recreate that classification.
+
+Measures such as:
+
+```text
+Avg Review Score
+Low Review Rate
+Reviewed Orders
+```
+
+will simply be evaluated by:
+
+```text
+delay_band
+```
+
+in the report.
+
+This preserves the validated SQL severity convention.
+
+---
+
+## 8.7 Category Measures
+
+Category measures will come from:
+
+```text
+bi_fact_order_categories
+```
+
+and normally use delivered activity for commercial reporting.
+
+### Required Measures
+
+| Measure                      | Purpose                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `Category Completed Orders`  | Distinct delivered orders containing the category                           |
+| `Category Items Sold`        | Delivered category item count                                               |
+| `Category Item Sales Value`  | Delivered category merchandise value                                        |
+| `Category Marketplace Share` | Category item sales value as share of total category-fact marketplace value |
+| `Category Avg Review Score`  | Average representative review for orders containing category                |
+| `Category Low Review Rate`   | Low-review share for orders containing category                             |
+
+`Category Completed Orders` uses:
+
+```text
+DISTINCTCOUNT(order_id)
+```
+
+because one order can appear in multiple categories.
+
+Therefore:
+
+> **Category completed-order counts are not additive across categories.**
+
+---
+
+### 8.7.1 Category Marketplace Share
+
+`Category Marketplace Share` will remove the category filter while preserving appropriate date and report context.
+
+Conceptually:
+
+```text
+Selected Category Item Sales Value
+÷
+Marketplace Item Sales Value under same non-category context
+```
+
+This allows category share to respond dynamically to:
+
+```text
+date filters
+matched periods
+report selections
+```
+
+without storing a static category-share column.
+
+---
+
+### 8.7.2 Category Review Interpretation
+
+Category review measures retain the analytical meaning:
+
+> **Review outcomes for orders containing the category**
+
+They must not be presented as:
+
+```text
+Product Rating
+Category Product Rating
+Product Quality Score
+```
+
+The measure names and report labels must preserve this distinction.
+
+---
+
+## 8.8 Seller Measures
+
+Seller measures will use:
+
+```text
+bi_fact_seller_orders
+```
+
+with delivered activity as the primary commercial population.
+
+### Required Measures
+
+| Measure                           | Purpose                                            |
+| --------------------------------- | -------------------------------------------------- |
+| `Active Sellers`                  | Distinct sellers represented in delivered activity |
+| `Seller-Order Relationships`      | Delivered order-seller rows                        |
+| `Seller Items Sold`               | Delivered seller item count                        |
+| `Seller Item Sales Value`         | Delivered seller merchandise value                 |
+| `Avg Seller Orders`               | Seller-order relationships ÷ active sellers        |
+| `Avg Item Sales Value per Seller` | Seller item sales value ÷ active sellers           |
+
+Known full-population targets include:
+
+```text
+Active Sellers
+= 2,970
+
+Seller-Order Relationships
+= 97,819
+
+Seller Items Sold
+= 110,197
+
+Seller Item Sales Value
+= 13,221,498.11
+```
+
+---
+
+### 8.8.1 Seller Order Counts
+
+Seller-level order measures must distinguish between:
+
+```text
+seller-order relationships
+```
+
+and:
+
+```text
+marketplace orders
+```
+
+A multi-seller order contributes one relationship to each participating seller.
+
+Therefore seller-order relationships are additive by seller, while marketplace order counts are not.
+
+This distinction must remain visible in measure names.
+
+---
+
+### 8.8.2 Seller Concentration Measures
+
+The analysis established important seller concentration patterns.
+
+However, complex dynamic measures such as:
+
+```text
+Number of sellers required to generate 50% of value
+Number of sellers required to generate 80% of value
+```
+
+will **not automatically be created as core measures**.
+
+They will be introduced only if an approved Power BI visual requires dynamic seller-concentration analysis.
+
+This avoids creating complicated DAX merely to demonstrate technical sophistication.
+
+At minimum, the model will support:
+
+```text
+Seller Item Sales Value
+Active Sellers
+seller-level ranking
+seller contribution share
+```
+
+which are sufficient to construct a concentration visual if one is selected.
+
+---
+
+## 8.9 Payment Measures
+
+Payment measures will use:
+
+```text
+bi_fact_payments
+```
+
+and the recorded paid-order population.
+
+### Required Measures
+
+| Measure                              | Purpose                                             |
+| ------------------------------------ | --------------------------------------------------- |
+| `Paid Orders`                        | Distinct orders represented in payment records      |
+| `Payment Records`                    | Number of payment records                           |
+| `Recorded Payment Value`             | Sum of payment value                                |
+| `Avg Payment Records per Paid Order` | Payment Records ÷ Paid Orders                       |
+| `Multi-Payment Orders`               | Distinct orders containing multiple payment records |
+| `Multi-Payment Order Rate`           | Multi-Payment Orders ÷ Paid Orders                  |
+| `Mixed-Method Orders`                | Distinct orders using more than one payment method  |
+| `Mixed-Method Order Rate`            | Mixed-Method Orders ÷ Paid Orders                   |
+
+Known reconciliation targets include:
+
+```text
+Paid Orders
+= 99,440
+
+Payment Records
+= 103,886
+
+Recorded Payment Value
+= 16,008,872.12
+
+Multi-Payment Orders
+= 2,961
+
+Multi-Payment Order Rate
+≈ 2.98%
+
+Mixed-Method Orders
+= 2,246
+
+Mixed-Method Order Rate
+≈ 2.26%
+```
+
+---
+
+### 8.9.1 Payment Method Measures
+
+When `payment_type` is used as report context, the model may use:
+
+```text
+Orders Using Payment Method
+Payment Method Order Usage Rate
+Payment Value by Method
+Payment Value Share
+```
+
+`Orders Using Payment Method` must use:
+
+```text
+DISTINCTCOUNT(order_id)
+```
+
+rather than payment-record count.
+
+Because an order can use more than one method:
+
+> **Payment-method order usage is not additive across payment types.**
+
+---
+
+### 8.9.2 Installment Measures
+
+Credit-card installment analysis may use:
+
+```text
+Credit Card Payment Records
+Multi-Installment Credit Card Records
+Multi-Installment Rate
+Avg Credit Card Payment Value
+```
+
+with:
+
+```text
+installment_band
+```
+
+providing the report segmentation.
+
+The installment band is already prepared in SQL and will not be reconstructed in DAX.
+
+The relationship between installment depth and payment value will remain descriptive.
+
+---
+
+## 8.10 Matched-Period Measures
+
+The primary growth comparison remains:
+
+```text
+January–August 2017
+versus
+January–August 2018
+```
+
+Power BI will not substitute generic full-year year-over-year calculations.
+
+For important growth metrics, explicit matched-period measures will be created.
+
+The pattern will be:
+
+```text
+[Metric] - Matched 2017
+[Metric] - Matched 2018
+[Metric] - Matched Growth %
+```
+
+For example:
+
+```text
+Completed Orders - Matched 2017
+Completed Orders - Matched 2018
+Completed Orders - Matched Growth %
+
+Completed Item Sales Value - Matched 2017
+Completed Item Sales Value - Matched 2018
+Completed Item Sales Value - Matched Growth %
+```
+
+Known marketplace reconciliation targets include:
+
+| Metric                     | Jan–Aug 2017 | Jan–Aug 2018 |  Growth |
+| -------------------------- | -----------: | -----------: | ------: |
+| Completed Orders           |       21,998 |       52,783 | 139.94% |
+| Completed Item Sales Value | 2,993,456.13 | 7,218,125.12 | 141.13% |
+
+Additional matched measures will be created only where required by the final report.
+
+---
+
+### 8.10.1 Category Matched Measures
+
+Category reporting will require matched-period measures for:
+
+```text
+Category Item Sales Value
+Absolute Growth
+Growth %
+Marketplace Share
+Share Change
+Growth Contribution
+```
+
+These calculations must preserve:
+
+```text
+Jan–Aug 2017
+vs
+Jan–Aug 2018
+```
+
+and not compare incomplete annual periods.
+
+---
+
+### 8.10.2 Growth Division Rules
+
+Growth measures will use safe division.
+
+Conceptually:
+
+```DAX
+DIVIDE(
+    CurrentValue - PreviousValue,
+    PreviousValue
+)
+```
+
+If the previous-period value is zero or absent, the growth percentage will return:
+
+```text
+BLANK
+```
+
+rather than:
+
+```text
+0%
+```
+
+This preserves the same zero-base logic corrected during the Excel reporting phase.
+
+---
+
+## 8.11 DAX Implementation Principles
+
+The following rules will guide measure implementation.
+
+### Use Explicit Measures
+
+Important business calculations will be explicit DAX measures.
+
+Raw numeric columns should not be dragged into final report visuals as uncontrolled implicit aggregations.
+
+---
+
+### Use `DIVIDE()` for Ratios
+
+Rates and shares will use:
+
+```DAX
+DIVIDE()
+```
+
+rather than direct `/` division where the denominator may be zero.
+
+This provides controlled blank handling.
+
+---
+
+### Use `DISTINCTCOUNT()` Where Business Grain Requires It
+
+Examples include:
+
+```text
+Completed Unique Customers
+Active Sellers
+Category Completed Orders
+Paid Orders
+Orders Using Payment Method
+```
+
+Row counts will not substitute for business-entity counts where multiple rows per entity are possible.
+
+---
+
+### Keep Row-Level Classification in SQL
+
+Existing row-level classifications such as:
+
+```text
+is_delivered
+is_delivery_eligible
+is_late
+delay_band
+installment_band
+```
+
+will remain SQL-prepared fields.
+
+DAX should not repeatedly reconstruct deterministic row-level business logic that was already validated upstream.
+
+---
+
+### Keep Filter-Context Calculations in DAX
+
+Calculations whose result should change according to report selections belong in DAX.
+
+Examples include:
+
+```text
+marketplace share
+active sellers
+repeat-customer counts
+growth rates
+selected-period percentages
+ranking
+```
+
+---
+
+### Avoid Calculated Columns Without Need
+
+Calculated columns will not be added merely because Power BI supports them.
+
+A calculated column should only be introduced if:
+
+* the result genuinely belongs at row grain;
+* it is required for grouping, sorting, or relationship logic;
+* the same requirement cannot be handled more appropriately upstream.
+
+---
+
+## 8.12 Blank and Zero Handling
+
+The model will distinguish between:
+
+```text
+0
+```
+
+and:
+
+```text
+BLANK
+```
+
+where the distinction has business meaning.
+
+Examples:
+
+```text
+Growth with zero prior-period denominator
+→ BLANK
+
+Non-eligible delivery metric
+→ BLANK
+
+A valid count with no matching records
+→ may display 0 depending on the measure
+```
+
+Measures will not convert every blank to zero automatically.
+
+This prevents the report from presenting undefined values as measured zeros.
+
+---
+
+## 8.13 Formatting Standards
+
+Initial measure formatting will follow the business meaning of each metric.
+
+### Counts
+
+Examples:
+
+```text
+Completed Orders
+Active Sellers
+Late Orders
+```
+
+Format:
+
+```text
+whole number
+thousands separator
+```
+
+### Rates and Shares
+
+Examples:
+
+```text
+Completion Rate
+Late Delivery Rate
+Category Marketplace Share
+```
+
+Format:
+
+```text
+percentage
+normally 1–2 decimal places
+```
+
+### Item Sales and Payment Values
+
+Examples:
+
+```text
+Completed Item Sales Value
+Recorded Payment Value
+```
+
+Format:
+
+```text
+numeric monetary value
+two decimal places where detail is required
+```
+
+A currency symbol will only be applied consistently if the project documentation explicitly establishes the desired reporting currency label.
+
+### Duration
+
+Examples:
+
+```text
+Avg Delivery Days
+Avg Late Days
+```
+
+Format:
+
+```text
+decimal days
+normally 2 decimal places
+```
+
+### Review Scores
+
+Format:
+
+```text
+2 decimal places
+```
+
+Display-unit abbreviation such as:
+
+```text
+K
+M
+```
+
+may later be used on executive visuals without changing the underlying measure.
+
+---
+
+## 8.14 Executive KPI Candidates
+
+Not every measure belongs on the Executive Overview.
+
+The current candidate set is intentionally small:
+
+```text
+Completed Orders
+Completed Unique Customers
+Completed Item Sales Value
+Avg Item Sales Value per Completed Order
+Late Delivery Rate
+Observed Repeat Customer Rate
+```
+
+This is a **candidate set**, not a final visual specification.
+
+The final executive page should contain approximately five to six high-value KPIs rather than a large KPI wall.
+
+Supporting category or seller information may be communicated through visuals rather than additional KPI cards.
+
+---
+
+## 8.15 Measures Deliberately Deferred
+
+The following calculations will not be built unless the final report design establishes a real need:
+
+```text
+complex seller Pareto thresholds
+customer decile calculations
+product-level measures
+geolocation-coordinate measures
+seller delivery scores
+seller review scores
+profit or margin measures
+customer lifetime value
+customer acquisition cost
+formal retention rate
+payment profitability
+```
+
+Some are unnecessary for the reporting questions.
+
+Others are not supported by the available data.
+
+This prevents the DAX layer from becoming unnecessarily large or analytically misleading.
+
+---
+
+## 8.16 Core Measure Validation
+
+Every important DAX measure must be reconciled against an existing SQL result where one is available.
+
+The validation process will follow:
+
+```text
+Validated SQL result
+        ↓
+Create DAX measure
+        ↓
+Evaluate with equivalent filters
+        ↓
+Compare result
+        ↓
+PASS
+or
+Investigate mismatch
+```
+
+The Power BI model will not be considered valid simply because a visual appears reasonable.
+
+Critical reconciliation will include at minimum:
+
+```text
+Completed Orders
+Completed Unique Customers
+Completed Item Sales Value
+Observed Repeat Customers
+Delivery Eligible Orders
+Late Orders
+Completed Category Item Sales Value
+Active Sellers
+Paid Orders
+Recorded Payment Value
+```
+
+These measures already have validated SQL benchmarks.
+
+---
+
+## 8.17 Measure Development Sequence
+
+Measures will not all be created at once.
+
+During PBIX implementation they will be developed in the following order:
+
+```text
+1. Base marketplace measures
+2. Validate marketplace totals
+
+3. Customer measures
+4. Validate customer totals
+
+5. Delivery and review measures
+6. Validate delivery totals
+
+7. Category measures
+8. Validate category totals
+
+9. Seller measures
+10. Validate seller totals
+
+11. Payment measures
+12. Validate payment totals
+
+13. Matched-period measures
+14. Validate matched comparisons
+
+15. Add supporting measures only when required by report visuals
+```
+
+This keeps errors localized and prevents a large unvalidated DAX layer from developing.
+
+---
+
+## 8.18 Final Measure Principle
+
+The measure layer will follow one rule:
+
+> **Create a measure because the business needs a reusable calculation, not because DAX provides an opportunity to create one.**
+
+The final measure catalog should remain small enough to understand, explicit enough to audit, and complete enough to answer the decision questions defined in the business-analysis phase.
+
+
+## 9. Semantic Model Validation
+
+The Power BI semantic model will be validated before report visuals are developed.
+
+A successful data refresh or visually reasonable KPI is not sufficient evidence that the model is correct.
+
+Validation must confirm that:
+
+* BI source tables preserve their intended grain;
+* dimension keys are unique;
+* relationships behave as designed;
+* fact tables are not unintentionally filtering one another;
+* DAX measures reconcile to validated SQL results;
+* report filters produce expected changes in context;
+* analytical populations remain consistent with the conventions established earlier in the project.
+
+The semantic model will therefore pass a formal validation gate before dashboard development begins.
+
+---
+
+### 9.1 Validation Sequence
+
+Validation will follow this order:
+
+```text
+BI source views
+        ↓
+row grain and key validation
+        ↓
+dimension validation
+        ↓
+relationship validation
+        ↓
+base DAX measures
+        ↓
+SQL reconciliation
+        ↓
+filter-context testing
+        ↓
+matched-period validation
+        ↓
+cross-domain isolation testing
+        ↓
+semantic model approved
+        ↓
+report development
+```
+
+Problems should be corrected at the earliest appropriate layer.
+
+For example:
+
+```text
+Incorrect source grain
+→ fix SQL view
+
+Duplicate dimension key
+→ fix dimension preparation
+
+Incorrect relationship
+→ fix semantic model
+
+Incorrect filter-context calculation
+→ fix DAX
+```
+
+A downstream DAX workaround should not be used to hide an upstream modeling problem.
+
+---
+
+## 9.2 BI Source Grain Validation
+
+Every imported BI fact must first satisfy its defined grain.
+
+### `bi_fact_orders`
+
+Expected grain:
+
+> **1 row = 1 order**
+
+Required test:
+
+```text
+row count
+=
+distinct order_id count
+```
+
+Known expected result:
+
+```text
+99,441 rows
+99,441 distinct orders
+```
+
+---
+
+### `bi_fact_order_categories`
+
+Expected grain:
+
+> **1 row = 1 order × 1 category**
+
+Required test:
+
+```text
+COUNTROWS
+=
+distinct combinations of:
+order_id + category_key
+```
+
+The exact row count will be established during H2 implementation rather than estimated in advance.
+
+---
+
+### `bi_fact_seller_orders`
+
+Expected grain:
+
+> **1 row = 1 order × 1 seller**
+
+Required test:
+
+```text
+COUNTROWS
+=
+distinct combinations of:
+order_id + seller_id
+```
+
+Known completed seller-order relationships:
+
+```text
+97,819
+```
+
+The total across all statuses will be established during H2 implementation.
+
+---
+
+### `bi_fact_payments`
+
+Expected grain:
+
+> **1 row = 1 payment record**
+
+Natural key:
+
+```text
+order_id
++
+payment_sequential
+```
+
+Expected result:
+
+```text
+103,886 rows
+103,886 unique payment keys
+```
+
+No fact table will proceed to Power BI if its intended grain is violated.
+
+---
+
+## 9.3 Dimension Validation
+
+Every dimension used on the `1` side of a relationship must contain a unique key.
+
+Required checks are:
+
+### `DimDate`
+
+```text
+Date unique
+Date non-null
+continuous calendar
+```
+
+### `DimCategory`
+
+```text
+category_key unique
+category_key non-null
+74 expected analytical members
+```
+
+### `DimSeller`
+
+```text
+seller_id unique
+seller_id non-null
+3,095 sellers
+```
+
+### `DimCustomerState`
+
+```text
+state_code unique
+state_code non-null
+```
+
+A dimension with duplicate relationship keys will be treated as a modeling error rather than converted to many-to-many cardinality.
+
+---
+
+## 9.4 Referential Coverage
+
+Every fact foreign key participating in a relationship must resolve to its dimension.
+
+Validation must confirm:
+
+```text
+bi_fact_orders[order_purchase_date]
+→ DimDate[Date]
+
+bi_fact_order_categories[order_purchase_date]
+→ DimDate[Date]
+
+bi_fact_seller_orders[order_purchase_date]
+→ DimDate[Date]
+
+bi_fact_payments[order_purchase_date]
+→ DimDate[Date]
+
+bi_fact_orders[customer_state]
+→ DimCustomerState[state_code]
+
+bi_fact_order_categories[category_key]
+→ DimCategory[category_key]
+
+bi_fact_seller_orders[seller_id]
+→ DimSeller[seller_id]
+```
+
+Unexpected unmatched fact keys are not acceptable.
+
+The dedicated:
+
+```text
+__unknown__
+```
+
+category member is an intentional analytical member and therefore should match successfully rather than appear as an orphaned category fact.
+
+---
+
+## 9.5 Relationship Validation
+
+After model relationships are created, the following conditions must hold:
+
+```text
+7 approved relationships
+all active
+all one-to-many
+all single-direction
+no fact-to-fact relationships
+no many-to-many relationships
+no bidirectional relationships
+no ambiguous relationship paths
+```
+
+The Power BI model view should visually match the relationship architecture documented in Section 7.
+
+If Power BI automatically creates additional relationships during import, they must be reviewed and removed unless they are part of the approved design.
+
+Automatic relationship detection will not override the documented semantic model.
+
+---
+
+## 9.6 Base Marketplace Reconciliation
+
+The first DAX quality gate will reconcile the primary order fact against validated SQL results.
+
+Required measures include:
+
+| Measure                    |      Expected Result |
+| -------------------------- | -------------------: |
+| Recorded Orders            |               99,441 |
+| Completed Orders           |               96,478 |
+| Completion Rate            | approximately 97.02% |
+| Recorded Items             |              112,650 |
+| Completed Items            |              110,197 |
+| Recorded Item Sales Value  |        13,591,643.70 |
+| Completed Item Sales Value |        13,221,498.11 |
+
+All values must match the validated SQL definitions within normal numeric precision.
+
+Any mismatch must be investigated before additional DAX development continues.
+
+---
+
+## 9.7 Customer Reconciliation
+
+Customer measures must reconcile to the validated customer analysis.
+
+Required full-population checks include:
+
+| Measure                                |     Expected Result |
+| -------------------------------------- | ------------------: |
+| Recorded Unique Customers              |              96,096 |
+| Completed Unique Customers             |              93,358 |
+| Observed Repeat Customers              |               2,801 |
+| One-Time Completed Customers           |              90,557 |
+| Repeat-Customer Completed Orders       |               5,921 |
+| Observed Repeat Customer Rate          | approximately 3.00% |
+| Repeat-Customer Order Share            | approximately 6.14% |
+| Repeat-Customer Item Sales Value       |          728,408.75 |
+| Repeat-Customer Item Sales Value Share | approximately 5.51% |
+
+These checks are particularly important because repeat-customer calculations depend on filter context rather than a static customer classification.
+
+---
+
+## 9.8 Delivery and Customer-Experience Reconciliation
+
+Delivery measures must reproduce the population established during SQL analysis.
+
+Required checks include:
+
+| Measure                  |     Expected Result |
+| ------------------------ | ------------------: |
+| Delivery Eligible Orders |              96,470 |
+| On-Time or Early Orders  |              88,644 |
+| Late Orders              |               7,826 |
+| Late Delivery Rate       | approximately 8.11% |
+| Avg Delivery Days        | approximately 12.56 |
+| Avg Late Days            |  approximately 9.55 |
+
+The model should also reproduce the expected directional review pattern across delay severity.
+
+For example:
+
+```text
+On time or early
+→ stronger average review outcome
+
+Increasing delay severity
+→ generally weaker review outcomes across several bands
+```
+
+Exact validated reference values for selected bands may be tested during DAX implementation.
+
+The purpose of this check is not merely to confirm averages but to ensure that:
+
+```text
+delivery eligibility
++
+delay classification
++
+representative review convention
+```
+
+are interacting correctly.
+
+---
+
+## 9.9 Category Reconciliation
+
+Category measures must reconcile to the category SQL analysis.
+
+Required completed-population checks include:
+
+| Measure                                        | Expected Result |
+| ---------------------------------------------- | --------------: |
+| Category Items Sold                            |         110,197 |
+| Category Item Sales Value                      |   13,221,498.11 |
+| Represented source categories                  |              73 |
+| Analytical category groups including `Unknown` |              74 |
+| Missing-category completed items               |           1,537 |
+| Untranslated-category completed items          |              22 |
+
+Selected major categories should also reconcile to known results.
+
+Examples include:
+
+| Category                | Completed Item Sales Value |
+| ----------------------- | -------------------------: |
+| Health & Beauty         |               1,233,131.72 |
+| Watches & Gifts         |               1,166,176.98 |
+| Bed Bath & Table        |               1,023,434.76 |
+| Sports & Leisure        |                 954,852.55 |
+| Computers & Accessories |                 888,724.61 |
+
+These checks confirm that category mapping, translation handling, delivered-order filtering, and aggregation are operating correctly.
+
+---
+
+## 9.10 Seller Reconciliation
+
+Seller measures must reconcile to the validated seller analysis.
+
+Required checks include:
+
+| Measure                    | Expected Result |
+| -------------------------- | --------------: |
+| Active Sellers             |           2,970 |
+| Seller-Order Relationships |          97,819 |
+| Seller Items Sold          |         110,197 |
+| Seller Item Sales Value    |   13,221,498.11 |
+
+Selected geographic results may also be reconciled.
+
+For example, São Paulo should remain the largest seller state and reproduce the validated commercial scale under equivalent filters.
+
+The model must not produce seller delivery or seller review measures because those outcomes are not supported at seller grain.
+
+---
+
+## 9.11 Payment Reconciliation
+
+Payment measures must reproduce the validated payment analysis.
+
+Required checks include:
+
+| Measure                           | Expected Result |
+| --------------------------------- | --------------: |
+| Paid Orders                       |          99,440 |
+| Payment Records                   |         103,886 |
+| Recorded Payment Value            |   16,008,872.12 |
+| Multi-Payment Orders              |           2,961 |
+| Mixed-Method Orders               |           2,246 |
+| Maximum payment records per order |              29 |
+| Maximum payment methods per order |               2 |
+
+Payment-record counts by method should also reconcile:
+
+| Payment Type | Expected Records |
+| ------------ | ---------------: |
+| Credit card  |           76,795 |
+| Boleto       |           19,784 |
+| Voucher      |            5,775 |
+| Debit card   |            1,529 |
+| Not defined  |                3 |
+
+The two retained non-positive installment records must remain present.
+
+---
+
+## 9.12 Matched-Period Reconciliation
+
+The date model and DAX measures must correctly reproduce the primary matched-period comparison:
+
+```text
+January–August 2017
+versus
+January–August 2018
+```
+
+At minimum:
+
+| Measure                    | Jan–Aug 2017 | Jan–Aug 2018 |
+| -------------------------- | -----------: | -----------: |
+| Completed Orders           |       21,998 |       52,783 |
+| Completed Item Sales Value | 2,993,456.13 | 7,218,125.12 |
+
+Expected growth:
+
+```text
+Completed Orders
+≈ +139.94%
+
+Completed Item Sales Value
+≈ +141.13%
+```
+
+The model must not accidentally include:
+
+```text
+September–December 2017
+```
+
+or:
+
+```text
+September–October 2018
+```
+
+in the matched comparison.
+
+---
+
+## 9.13 Date Filter Testing
+
+The shared `DimDate` relationship should produce predictable filtering across all facts.
+
+For example:
+
+```text
+Select:
+Year = 2018
+Month = August
+```
+
+should filter:
+
+```text
+bi_fact_orders
+bi_fact_order_categories
+bi_fact_seller_orders
+bi_fact_payments
+```
+
+to order activity purchased during August 2018.
+
+The test should confirm that all affected measures respond to the same purchase-date context.
+
+---
+
+## 9.14 Dimension Isolation Testing
+
+Not every dimension should filter every business process.
+
+This is intentional and must be tested.
+
+### Category Test
+
+Selecting:
+
+```text
+Health & Beauty
+```
+
+should change category measures such as:
+
+```text
+Category Item Sales Value
+Category Completed Orders
+Category Avg Review Score
+```
+
+It should **not automatically change**:
+
+```text
+Completed Orders
+Active Sellers
+Paid Orders
+```
+
+because those measures belong to separate facts.
+
+---
+
+### Seller Test
+
+Selecting a seller or seller state should change:
+
+```text
+Active Sellers
+Seller Item Sales Value
+Seller Items Sold
+```
+
+but should not automatically change:
+
+```text
+Late Delivery Rate
+Category Item Sales Value
+Payment Method Mix
+```
+
+---
+
+### Customer State Test
+
+Selecting a customer state should change order-fact measures such as:
+
+```text
+Completed Orders
+Completed Unique Customers
+Late Delivery Rate
+Avg Review Score
+```
+
+but should not directly filter:
+
+```text
+seller measures
+category measures
+payment measures
+```
+
+This behaviour confirms that the model is respecting business-process boundaries rather than allowing uncontrolled filter propagation.
+
+---
+
+## 9.15 Cross-Fact Consistency Testing
+
+Separate fact tables may independently reproduce the same marketplace total when their grain supports it.
+
+For example:
+
+```text
+Completed Item Sales Value
+from bi_fact_orders
+
+Category Item Sales Value
+from bi_fact_order_categories
+
+Seller Item Sales Value
+from bi_fact_seller_orders
+```
+
+should all reconcile to:
+
+```text
+13,221,498.11
+```
+
+under the full completed-order population.
+
+This is a useful consistency check because the three facts were prepared through different analytical grains.
+
+A matching result provides evidence that:
+
+```text
+order aggregation
+category aggregation
+seller aggregation
+```
+
+all preserve the same underlying merchandise value.
+
+These measures should not be combined across facts by summing them together.
+
+They represent alternative analytical views of the same underlying merchandise activity.
+
+---
+
+## 9.16 Filter-Context Testing
+
+Measures must be tested under more than the full-data context.
+
+At minimum, selected measures should be checked under:
+
+```text
+single month
+single year
+matched analytical period
+single customer state
+single category
+single seller state
+single payment type
+```
+
+The goal is to verify that a measure remains logically correct when filters are applied.
+
+A measure that matches the overall SQL total but behaves incorrectly under filters is not considered validated.
+
+---
+
+## 9.17 Ratio Denominator Testing
+
+Rates and shares require explicit denominator validation.
+
+For example:
+
+```text
+Late Delivery Rate
+=
+Late Orders
+÷
+Delivery Eligible Orders
+```
+
+The denominator must not become:
+
+```text
+all recorded orders
+```
+
+under any reporting context.
+
+Similarly:
+
+```text
+Observed Repeat Customer Rate
+=
+Observed Repeat Customers
+÷
+Completed Unique Customers
+```
+
+and:
+
+```text
+Mixed-Method Order Rate
+=
+Mixed-Method Orders
+÷
+Paid Orders
+```
+
+Each ratio must preserve its documented analytical population.
+
+---
+
+## 9.18 Blank and Zero Testing
+
+Measures where a denominator is undefined must return:
+
+```text
+BLANK
+```
+
+rather than misleading zero values.
+
+Examples include:
+
+```text
+growth when prior-period value = 0
+delivery measure where no eligible orders exist
+review rate where no reviewed orders exist
+```
+
+The model should distinguish:
+
+```text
+no measurable result
+```
+
+from:
+
+```text
+measured result = 0
+```
+
+This is particularly important for small category or geographic selections.
+
+---
+
+## 9.19 Visual-Level Sanity Checks
+
+Before formal report design begins, temporary validation visuals may be created.
+
+Examples include:
+
+```text
+simple card
+basic table
+matrix
+temporary slicer
+```
+
+These are validation tools rather than dashboard design.
+
+They may be used to confirm:
+
+```text
+measure output
+filter behaviour
+relationship propagation
+matched-period logic
+```
+
+Temporary validation visuals should not influence the final dashboard layout and may be deleted after model QA.
+
+---
+
+## 9.20 Source-to-Power-BI Traceability
+
+For critical KPIs, the project should retain a clear trace from:
+
+```text
+business definition
+        ↓
+validated SQL result
+        ↓
+BI fact source
+        ↓
+DAX measure
+        ↓
+report visual
+```
+
+For example:
+
+```text
+Late Delivery Rate
+        ↓
+F4 validated definition
+        ↓
+bi_fact_orders
+        ↓
+[Late Delivery Rate]
+        ↓
+Delivery & CX report page
+```
+
+This traceability helps ensure that report visuals remain connected to the analytical framework rather than becoming independent calculations.
+
+---
+
+## 9.21 Validation Failure Handling
+
+If a Power BI result does not reconcile with SQL:
+
+```text
+Do not change the SQL benchmark merely to match Power BI.
+```
+
+Instead investigate in this order:
+
+```text
+1. Report filter context
+2. DAX measure definition
+3. Relationship behaviour
+4. Fact-table grain
+5. BI SQL view
+6. Upstream validated source only if evidence indicates an actual source issue
+```
+
+Earlier project phases should not be reopened without a specific technical contradiction.
+
+---
+
+## 9.22 Semantic Model Quality Gate
+
+Report development may begin only when all critical conditions below are satisfied.
+
+### Structural Validation
+
+```text
+PASS — fact grains correct
+PASS — dimension keys unique
+PASS — approved relationships only
+PASS — no many-to-many relationships
+PASS — no bidirectional relationships
+PASS — no unexpected unmatched dimension keys
+```
+
+### Metric Validation
+
+```text
+PASS — marketplace measures reconcile
+PASS — customer measures reconcile
+PASS — delivery measures reconcile
+PASS — category measures reconcile
+PASS — seller measures reconcile
+PASS — payment measures reconcile
+PASS — matched-period measures reconcile
+```
+
+### Behaviour Validation
+
+```text
+PASS — DimDate filters all intended facts correctly
+PASS — category filters remain category-specific
+PASS — seller filters remain seller-specific
+PASS — customer-state filters remain order-specific
+PASS — ratio denominators remain correct
+PASS — blanks and zeros behave as intended
+```
+
+If any critical check fails:
+
+> **Report development pauses until the discrepancy is resolved.**
+
+---
+
+## 9.23 Final Validation Principle
+
+The semantic model will follow one quality rule:
+
+> **A Power BI result is considered trustworthy only when its grain, population, relationship context, and business definition are understood and its critical metrics reconcile to validated source analysis.**
+
+This validation gate ensures that subsequent dashboard design is built on a controlled analytical foundation rather than on visually plausible but unverified calculations.
+
+
+## 10. Report Architecture
+
+The Power BI report will be organized around the business priorities established during the business-analysis phase rather than around source tables or individual SQL files.
+
+The report should allow a stakeholder to move through three levels of understanding:
+
+```text
+Marketplace position
+        ↓
+Important business pattern
+        ↓
+Focused investigation
+```
+
+The initial report architecture will contain four pages:
+
+```text
+1. Executive Overview
+
+2. Growth & Customers
+
+3. Delivery & Customer Experience
+
+4. Commercial Marketplace
+```
+
+This structure is intentionally compact.
+
+Payment behaviour will remain available as supporting commercial context but will not automatically receive a dedicated report page.
+
+---
+
+### 10.1 Report Design Hierarchy
+
+The reporting hierarchy will follow:
+
+```text
+Executive Overview
+        ↓
+Primary business priorities
+        ↓
+Detailed analytical pages
+```
+
+The Executive Overview should answer:
+
+> **What happened, where is attention required, and which areas deserve deeper investigation?**
+
+The detailed pages should answer:
+
+> **What pattern explains the executive signal, and where is that pattern concentrated?**
+
+The report should not require stakeholders to inspect every analytical page before understanding the main business story.
+
+---
+
+# 10.2 Page 1 — Executive Overview
+
+## Purpose
+
+The Executive Overview will provide a concise summary of marketplace performance and the most important business conditions identified in the project.
+
+It should allow a stakeholder to understand the overall marketplace position within a short period of time.
+
+The page will not attempt to summarize every analytical domain.
+
+---
+
+## 10.2.1 Executive Questions
+
+The page should primarily answer:
+
+1. How did marketplace scale develop during the observed period?
+2. Was growth driven primarily by customer and transaction volume or by increasing value per order?
+3. How much observed purchasing came from repeat customers?
+4. How reliable was delivery against the estimated delivery date?
+5. Which commercial areas or customer-experience conditions deserve deeper investigation?
+
+---
+
+## 10.2.2 Executive KPI Candidates
+
+The Executive Overview should contain approximately five to six KPI cards.
+
+The current candidate measures are:
+
+```text
+Completed Orders
+
+Completed Unique Customers
+
+Completed Item Sales Value
+
+Avg Item Sales Value per Completed Order
+
+Late Delivery Rate
+
+Observed Repeat Customer Rate
+```
+
+These measures represent:
+
+```text
+marketplace scale
+customer scale
+commercial activity
+order value
+customer experience
+customer purchasing depth
+```
+
+The final set may be reduced if testing shows that fewer KPIs communicate the business story more clearly.
+
+---
+
+## 10.2.3 Primary Marketplace Trend
+
+The page should contain one primary trend visual showing marketplace development across the core analytical period:
+
+```text
+January 2017
+through
+August 2018
+```
+
+The trend should communicate marketplace scale without overcrowding the visual.
+
+The strongest candidate measures are:
+
+```text
+Completed Orders
+
+Completed Item Sales Value
+```
+
+The final visual should make it possible to see whether commercial growth broadly followed transaction growth.
+
+The report should not display every marketplace metric on the same trend chart.
+
+---
+
+## 10.2.4 Growth Composition Diagnostic
+
+A compact diagnostic should communicate the core growth-model conclusion:
+
+> Marketplace expansion was primarily associated with substantially greater customer and transaction volume while average item sales value per completed order changed comparatively little.
+
+Possible measures include:
+
+```text
+Matched growth in Completed Orders
+
+Matched growth in Completed Unique Customers
+
+Matched growth in Completed Item Sales Value
+
+Matched growth in Avg Item Sales Value per Completed Order
+```
+
+The purpose is comparison of growth components rather than another time-series visual.
+
+---
+
+## 10.2.5 Customer-Experience Diagnostic
+
+The Executive Overview should also surface delivery reliability because it is the strongest customer-experience issue identified in the analysis.
+
+The visual should communicate:
+
+```text
+Late Delivery Rate
+
+and/or
+
+change in Late Delivery Rate
+between matched periods
+```
+
+Potential supporting context may include:
+
+```text
+Avg Delivery Days
+```
+
+to make visible the important distinction that:
+
+```text
+average delivery duration remained broadly stable
+while
+late-delivery incidence increased
+```
+
+The page should not attempt to show full delay-severity analysis.
+
+That belongs on the Delivery & Customer Experience page.
+
+---
+
+## 10.2.6 Executive Page Restraint
+
+The Executive Overview should remain intentionally limited.
+
+Target structure:
+
+```text
+5–6 KPI cards
+
+1 primary marketplace trend
+
+1 growth diagnostic
+
+1 customer-experience diagnostic
+```
+
+This provides approximately:
+
+```text
+8–9 meaningful visual elements
+```
+
+including KPI cards.
+
+The page should avoid:
+
+* category detail tables;
+* seller-level rankings;
+* payment-method breakdowns;
+* detailed state analysis;
+* delay-severity tables;
+* large numbers of slicers;
+* technical validation information.
+
+Those belong elsewhere or remain in the analytical source layer.
+
+---
+
+# 10.3 Page 2 — Growth & Customers
+
+## Purpose
+
+The Growth & Customers page will explain the structure of marketplace expansion and the observed purchasing behaviour of customers.
+
+The page should distinguish:
+
+```text
+growth in marketplace scale
+```
+
+from:
+
+```text
+growth in customer purchasing depth
+```
+
+without presenting observed repeat purchasing as a formal retention metric.
+
+---
+
+## 10.3.1 Business Questions
+
+The page should answer:
+
+1. How did completed orders, unique customers, and item sales value change over time?
+2. Did item sales value grow mainly through transaction volume or through higher value per order?
+3. What proportion of completed customers placed more than one completed order?
+4. How much completed marketplace activity came from one-time versus repeat customers?
+5. How concentrated was completed-order frequency across customers?
+
+---
+
+## 10.3.2 Marketplace Growth Trend
+
+A primary trend visual should allow comparison of marketplace activity over the core period.
+
+Potential measures include:
+
+```text
+Completed Orders
+Completed Unique Customers
+Completed Item Sales Value
+```
+
+Not all measures need to appear in one chart.
+
+If different units make the visual difficult to interpret, separate but coordinated visuals should be preferred over a multi-axis chart that reduces clarity.
+
+---
+
+## 10.3.3 Matched-Period Growth Comparison
+
+The page should clearly present:
+
+```text
+Jan–Aug 2017
+vs
+Jan–Aug 2018
+```
+
+for major growth measures.
+
+Likely comparisons include:
+
+```text
+Completed Orders
+Completed Unique Customers
+Completed Items
+Completed Item Sales Value
+Avg Item Sales Value per Completed Order
+```
+
+This visual should make the volume-driven nature of marketplace growth immediately understandable.
+
+---
+
+## 10.3.4 Customer Frequency
+
+A customer-frequency visual should show how completed customers are distributed by completed-order count.
+
+The analytical purpose is to show that:
+
+```text
+most observed customers completed one order
+```
+
+while a relatively small customer group completed multiple orders.
+
+The visual should not be labeled as:
+
+```text
+Retention Distribution
+```
+
+because the analysis does not establish a cohort-normalized retention measure.
+
+Appropriate terminology includes:
+
+```text
+Completed Order Frequency
+
+Observed Customer Purchase Frequency
+
+Completed Orders per Customer
+```
+
+---
+
+## 10.3.5 One-Time vs Repeat Activity
+
+The page should compare:
+
+```text
+One-Time Completed Customers
+Observed Repeat Customers
+```
+
+and, where useful:
+
+```text
+One-Time Customer Item Sales Value
+Repeat-Customer Item Sales Value
+```
+
+This helps distinguish:
+
+```text
+customer count contribution
+```
+
+from:
+
+```text
+commercial contribution
+```
+
+Repeat purchasing should remain framed as observed behaviour within the available dataset period.
+
+---
+
+## 10.3.6 Customer Geography
+
+Customer geography may be included only if it adds useful context to the growth story.
+
+Potential measures include:
+
+```text
+Completed Orders by Customer State
+
+Completed Unique Customers by Customer State
+
+Completed Item Sales Value by Customer State
+```
+
+However, geography is not the primary purpose of this page.
+
+If state-level customer activity does not materially improve the decision story after implementation, it may be omitted.
+
+---
+
+## 10.3.7 Measures Not Required on This Page
+
+The page should not include:
+
+* formal retention rate;
+* customer lifetime value;
+* acquisition cost;
+* customer profitability;
+* unsupported customer segments;
+* payment behaviour;
+* detailed category performance;
+* seller analysis.
+
+The available data does not support several of these metrics, while the others belong to different analytical pages.
+
+---
+
+# 10.4 Page 3 — Delivery & Customer Experience
+
+## Purpose
+
+The Delivery & Customer Experience page will investigate delivery reliability relative to the estimated delivery date and its association with customer-review outcomes.
+
+This page represents the strongest operational/customer-experience story identified during business synthesis.
+
+---
+
+## 10.4.1 Business Questions
+
+The page should answer:
+
+1. How did delivery duration and late-delivery incidence change during the observed period?
+2. How frequently did delivered orders arrive after the estimated delivery date?
+3. How severe were delays when they occurred?
+4. How did review outcomes differ between on-time and late orders?
+5. How did review outcomes change across delay-severity bands?
+6. Which states combined meaningful order volume with comparatively weak delivery reliability?
+
+---
+
+## 10.4.2 Delivery KPI Layer
+
+Likely KPI measures include:
+
+```text
+Delivery Eligible Orders
+
+Late Delivery Rate
+
+Avg Delivery Days
+
+Avg Late Days
+
+Avg Review Score
+```
+
+The page should not become another large KPI wall.
+
+Only measures necessary to establish delivery scale, reliability, and customer-experience context should be shown prominently.
+
+---
+
+## 10.4.3 Delivery Performance Trend
+
+The page should compare:
+
+```text
+Late Delivery Rate
+```
+
+and:
+
+```text
+Avg Delivery Days
+```
+
+over the primary analytical period.
+
+The purpose is to communicate the key finding that:
+
+```text
+delivery speed
+```
+
+and:
+
+```text
+reliability against estimated delivery dates
+```
+
+do not necessarily move in the same direction.
+
+The visual design should avoid suggesting that stable average delivery duration means delivery reliability also remained stable.
+
+---
+
+## 10.4.4 Delay Severity and Review Outcomes
+
+A core analytical visual should compare customer-review outcomes across:
+
+```text
+on_time_or_early
+over_0_to_3_days_late
+over_3_to_7_days_late
+over_7_to_14_days_late
+over_14_to_30_days_late
+over_30_days_late
+```
+
+Potential measures include:
+
+```text
+Avg Review Score
+
+Low Review Rate
+
+Reviewed Orders
+```
+
+Population size should remain visible because extreme delay bands contain fewer observations.
+
+The visual must communicate association rather than causation.
+
+---
+
+## 10.4.5 Geographic Delivery Reliability
+
+State analysis should identify markets that combine:
+
+```text
+meaningful delivery volume
++
+comparatively high late-delivery rate
+```
+
+Potential measures include:
+
+```text
+Delivery Eligible Orders
+
+Late Delivery Rate
+
+Avg Delivery Days
+```
+
+The design should avoid ranking states by rate alone.
+
+A small state with a high rate may represent considerably less marketplace exposure than a large state with a moderately high rate.
+
+Both:
+
+```text
+rate
+```
+
+and:
+
+```text
+population
+```
+
+should therefore be considered.
+
+---
+
+## 10.4.6 Geographic Visual Choice
+
+A map is not automatically required simply because geographic data exists.
+
+The current geography is state-level and the primary business question is comparative performance.
+
+A ranked chart, scatter plot, or other comparative visual may communicate:
+
+```text
+volume
++
+late-delivery rate
+```
+
+more effectively than a decorative map.
+
+The final visual type will therefore be chosen according to interpretability rather than geographic novelty.
+
+---
+
+## 10.4.7 Customer Review Interpretation
+
+Review metrics on this page represent:
+
+> **Order-level customer experience**
+
+They should not be described as:
+
+```text
+product quality
+seller quality
+logistics-provider rating
+```
+
+The available data does not isolate those causes.
+
+The page should preserve the observational conclusion:
+
+> Late delivery is strongly associated with weaker customer-review outcomes.
+
+---
+
+# 10.5 Page 4 — Commercial Marketplace
+
+## Purpose
+
+The Commercial Marketplace page will bring together the two supply-side commercial themes:
+
+```text
+Category Portfolio
++
+Seller and Supply Structure
+```
+
+These themes are related through marketplace merchandise activity but will remain analytically distinct.
+
+The page should help stakeholders understand:
+
+```text
+where commercial activity is concentrated
+which categories contribute most to growth
+how productive seller supply is distributed
+```
+
+---
+
+## 10.5.1 Category Business Questions
+
+The category section should answer:
+
+1. Which categories generate the greatest completed item sales value?
+2. Which categories contributed most to matched-period marketplace growth?
+3. Which categories gained or lost marketplace share?
+4. Which large categories grew more slowly than the marketplace?
+5. Which commercially important categories also show comparatively weaker customer-review outcomes?
+
+---
+
+## 10.5.2 Category Portfolio Visual
+
+The category section should go beyond a simple descending sales bar chart.
+
+The preferred analytical design should compare multiple dimensions such as:
+
+```text
+commercial scale
+growth
+marketplace-share movement
+customer-review context
+```
+
+Potential category roles include:
+
+```text
+large growth leaders
+
+large but slower-growing categories
+
+share-gaining categories
+
+share-losing categories
+
+smaller emerging categories
+```
+
+These roles should emerge from measures and visual context rather than from unsupported static classifications.
+
+---
+
+## 10.5.3 Category Growth Contribution
+
+A dedicated visual may show:
+
+```text
+absolute contribution to matched-period marketplace growth
+```
+
+because percentage growth alone can overemphasize small-base categories.
+
+This helps distinguish:
+
+```text
+fast percentage growth
+```
+
+from:
+
+```text
+material contribution to marketplace expansion
+```
+
+The two concepts should not be treated as interchangeable.
+
+---
+
+## 10.5.4 Category Review Context
+
+Customer-review outcomes may be shown alongside commercially important categories.
+
+The report should use terminology such as:
+
+```text
+Avg Review Score for Orders Containing Category
+
+Low Review Rate for Orders Containing Category
+```
+
+rather than:
+
+```text
+Category Rating
+Product Rating
+```
+
+This preserves the order-level review limitation.
+
+---
+
+## 10.5.5 Seller Business Questions
+
+The seller section should answer:
+
+1. How many sellers participated in completed marketplace activity?
+2. How did seller participation change between matched periods?
+3. How concentrated was seller merchandise activity?
+4. How was productive seller supply distributed across states?
+5. Was marketplace expansion accompanied by a broader seller base as well as greater average seller activity?
+
+---
+
+## 10.5.6 Seller Participation
+
+A seller comparison should communicate:
+
+```text
+active sellers
+
+seller-order relationships
+
+average seller activity
+```
+
+across the matched periods.
+
+The report should use:
+
+```text
+participation
+```
+
+rather than:
+
+```text
+seller acquisition
+seller churn
+```
+
+because the dataset does not identify the reason sellers appear or disappear between periods.
+
+---
+
+## 10.5.7 Seller Concentration
+
+A seller-concentration visual may communicate that a relatively small portion of active sellers generated a substantial share of merchandise activity.
+
+Potential approaches include:
+
+```text
+seller contribution distribution
+
+cumulative seller contribution
+
+ranked seller-value distribution
+```
+
+The final visual should emphasize marketplace structure rather than imply that concentration itself is necessarily harmful.
+
+A dynamic Pareto-style calculation will only be implemented if the visual materially improves the business story.
+
+---
+
+## 10.5.8 Seller Geography
+
+Seller-state analysis may show:
+
+```text
+Active Sellers by State
+
+Seller Item Sales Value by State
+```
+
+to communicate the geographic concentration of productive supply.
+
+The report should not infer:
+
+```text
+regional profitability
+logistics capacity
+inventory capacity
+```
+
+from seller location alone.
+
+---
+
+# 10.6 Payment Behaviour
+
+Payment behaviour will remain available in the semantic model but will not automatically receive a dedicated report page.
+
+This follows the business-analysis conclusion that payments provide useful purchasing context but are not currently a primary strategic issue.
+
+Potential supporting information includes:
+
+```text
+payment-method mix
+
+credit-card installment distribution
+
+multi-payment behaviour
+```
+
+A payment visual should be included only if it materially improves the final commercial story without displacing higher-priority information.
+
+Otherwise:
+
+> **The payment analysis will remain documented in SQL and available through the semantic model without appearing prominently in the final dashboard.**
+
+This is intentional rather than an omission.
+
+---
+
+# 10.7 Information Not Required in the Main Report
+
+Not every validated SQL finding should become a Power BI visual.
+
+The main report does not need dedicated visuals for:
+
+```text
+every order status
+
+every payment combination
+
+every customer-frequency value
+
+all 74 category groups simultaneously
+
+individual product IDs
+
+individual seller IDs
+
+raw geolocation records
+
+data-quality audit findings
+
+database validation results
+```
+
+These remain part of the analytical evidence but do not necessarily support stakeholder decision-making.
+
+---
+
+# 10.8 Detail Tables
+
+Large detail tables should be used sparingly.
+
+A table is appropriate where stakeholders need to compare exact values across several dimensions, such as:
+
+```text
+Category
+Item Sales Value
+Growth
+Share Change
+Review Outcome
+```
+
+However, tables should not be added simply to expose every available metric.
+
+Where exact row-level detail is not required, a clearer analytical visual should be preferred.
+
+---
+
+# 10.9 Visual Selection Principle
+
+Exact chart types will not be permanently specified before the semantic model is implemented.
+
+Each visual should be selected according to the analytical relationship being communicated.
+
+Examples:
+
+```text
+Trend
+→ line chart may be appropriate
+
+Category comparison
+→ ranked bar may be appropriate
+
+Volume + rate
+→ scatter plot may be appropriate
+
+Composition
+→ limited stacked comparison may be appropriate
+
+Exact multi-metric comparison
+→ table or matrix may be appropriate
+```
+
+The visual type is therefore a consequence of the business question rather than a predetermined dashboard template.
+
+---
+
+# 10.10 Dashboard Density
+
+Each page should remain focused enough to understand without excessive scrolling or visual competition.
+
+A practical target is:
+
+```text
+approximately 5–8 primary analytical visuals per page
+```
+
+including KPI cards where appropriate.
+
+This is a design guideline rather than a fixed quota.
+
+If a page requires substantially more visuals to explain its purpose, the business question or page structure should be reconsidered before adding more content.
+
+---
+
+# 10.11 Reporting Flow
+
+The intended stakeholder journey is:
+
+```text
+Executive Overview
+        ↓
+Identify major condition
+        ↓
+Choose relevant analytical page
+        ↓
+
+Growth concern
+→ Growth & Customers
+
+Customer-experience concern
+→ Delivery & Customer Experience
+
+Commercial portfolio / supply question
+→ Commercial Marketplace
+```
+
+The report should support investigation without forcing stakeholders through a fixed presentation sequence.
+
+---
+
+# 10.12 Relationship Between SQL and Power BI Reporting
+
+Power BI will not replace the detailed SQL analytical outputs.
+
+Instead:
+
+```text
+SQL
+→ detailed analytical evidence
+
+Power BI
+→ selected decision-relevant communication
+```
+
+A SQL result may remain outside the dashboard if:
+
+* it validates an assumption;
+* provides useful analytical depth;
+* documents a limitation;
+* or supports a finding that does not require ongoing visual monitoring.
+
+This prevents the dashboard from becoming a visual copy of F2–F7.
+
+---
+
+# 10.13 Report Architecture Status
+
+The planned report structure is therefore:
+
+```text
+PAGE 1
+Executive Overview
+→ marketplace position
+→ growth composition
+→ delivery signal
+
+PAGE 2
+Growth & Customers
+→ marketplace expansion
+→ matched growth
+→ customer purchase frequency
+→ one-time vs repeat activity
+
+PAGE 3
+Delivery & Customer Experience
+→ delivery reliability
+→ delay severity
+→ review association
+→ geographic differences
+
+PAGE 4
+Commercial Marketplace
+→ category portfolio
+→ category growth contribution
+→ seller participation
+→ seller concentration
+→ seller geography
+```
+
+Payment behaviour remains supporting context and may be incorporated selectively only if the final report benefits from it.
+
+---
+
+## 10.14 Final Report Architecture Principle
+
+The report will follow one rule:
+
+> **Every page should answer a defined set of business questions, and every visual should earn its place by helping a stakeholder understand, compare, monitor, or investigate an important business condition.**
+
+The report will prioritize analytical clarity and decision usefulness over the number of visuals, Power BI features, or metrics displayed.
+
+
+## 11. Report Interaction Principles
+
+Report interactions will be designed to support investigation without making the analytical context difficult to understand.
+
+Power BI features such as slicers, cross-filtering, tooltips, drill-through, bookmarks, and navigation will only be used where they improve the business experience.
+
+The report should remain understandable without requiring users to discover hidden interaction logic.
+
+---
+
+### 11.1 Interaction Design Principle
+
+The report will follow one interaction rule:
+
+> **An interaction should be included only when its effect is predictable, analytically valid, and useful for the business question being investigated.**
+
+Interactive functionality will not be added simply to demonstrate Power BI features.
+
+The priority is:
+
+```text
+clarity
+↓
+correct analytical context
+↓
+useful investigation
+↓
+visual sophistication
+```
+
+---
+
+### 11.2 Primary Date Context
+
+The report's main analytical period is:
+
+```text
+January 2017
+through
+August 2018
+```
+
+This period should be the default context for the main report experience.
+
+The semantic model will retain the complete recorded date range, but sparse 2016 activity and the incomplete later 2018 period should not dominate normal stakeholder reporting.
+
+The matched-period comparison will continue to use:
+
+```text
+January–August 2017
+versus
+January–August 2018
+```
+
+through explicit measures.
+
+---
+
+### 11.3 Date Slicer
+
+Where interactive date selection is useful, the report should use fields from:
+
+```text
+DimDate
+```
+
+rather than date columns directly from fact tables.
+
+Potential date controls include:
+
+```text
+Year
+Year Month
+Date range
+```
+
+The exact slicer type will depend on the page.
+
+A single consistent date context is preferred over several overlapping date slicers.
+
+---
+
+### 11.4 Date Slicer Synchronization
+
+Because `DimDate` filters all four fact tables, a date selection can provide a consistent purchase-period context across the report.
+
+A date slicer may therefore be synchronized across analytical pages where doing so improves continuity.
+
+However, synchronization should only be used where the same date interpretation applies.
+
+For example:
+
+```text
+Growth & Customers
+Delivery & Customer Experience
+Commercial Marketplace
+```
+
+all primarily analyze activity according to:
+
+```text
+order_purchase_date
+```
+
+and can therefore share the same time context.
+
+The Executive Overview may use a fixed primary-period presentation if unrestricted date filtering would weaken the intended executive comparison.
+
+The final behavior will be tested during report implementation.
+
+---
+
+### 11.5 Business-Specific Slicers
+
+Business-specific slicers should remain limited to pages where their analytical meaning is valid.
+
+Examples include:
+
+```text
+Customer State
+→ Delivery & Customer Experience
+→ potentially Growth & Customers
+
+Category
+→ Commercial Marketplace category analysis
+
+Seller State
+→ Commercial Marketplace seller analysis
+
+Payment Type
+→ only if payment reporting is included
+```
+
+A category slicer should not be treated as a report-wide filter because `DimCategory` intentionally filters only the category fact.
+
+Similarly:
+
+```text
+Seller State
+```
+
+should not be presented as though it filters marketplace-wide order or delivery KPIs.
+
+Page-specific slicers should therefore be preferred for dimensions that apply only to one business process.
+
+---
+
+### 11.6 Slicer Restraint
+
+Pages should not contain a large number of slicers simply because fields are available.
+
+A practical target is:
+
+```text
+approximately 1–3 useful slicers per analytical page
+```
+
+where necessary.
+
+Examples of low-value slicers include:
+
+```text
+order_id
+seller_id
+payment_sequential
+technical category keys
+```
+
+These should not appear in the normal stakeholder interface.
+
+Slicers should represent meaningful business choices rather than database fields.
+
+---
+
+### 11.7 Cross-Filtering and Cross-Highlighting
+
+Power BI visual interactions will be reviewed rather than left automatically enabled everywhere.
+
+Selecting a visual element should filter or highlight another visual only when the relationship between them is meaningful.
+
+For example, on the Delivery & Customer Experience page:
+
+```text
+select a customer state
+        ↓
+delivery KPIs
+late-delivery measures
+review outcomes
+```
+
+may all reasonably respond because they use the same order fact.
+
+Similarly, selecting a delay band may appropriately update:
+
+```text
+Reviewed Orders
+Avg Review Score
+Low Review Rate
+```
+
+---
+
+### 11.8 Interactions That Should Be Disabled
+
+An interaction should be disabled where it creates an interpretation that is technically possible but analytically confusing.
+
+For example, a category-selection visual should not appear to control seller analysis when no category-to-seller analytical relationship exists in the approved semantic model.
+
+Likewise, selecting:
+
+```text
+Seller State
+```
+
+should not be expected to change:
+
+```text
+Late Delivery Rate
+```
+
+because delivery outcomes are not attributed to individual sellers.
+
+Visual interaction settings will therefore reflect the semantic-model boundaries rather than attempt to make every visual interact with every other visual.
+
+---
+
+### 11.9 KPI Card Interactions
+
+Executive KPI cards should remain stable enough to preserve the page's main business context.
+
+A user clicking a supporting visual should not unexpectedly transform every executive KPI into a narrow segment unless that behavior clearly improves interpretation.
+
+For example:
+
+```text
+select category
+→ category-specific visual responds
+```
+
+does not automatically imply that:
+
+```text
+Completed Orders
+Completed Unique Customers
+Late Delivery Rate
+```
+
+should become category-specific metrics.
+
+Because the report uses separate facts, this separation will often occur naturally through the model.
+
+Where Power BI visual interactions introduce unwanted behavior within the same fact, they should be explicitly disabled.
+
+---
+
+### 11.10 Tooltips
+
+Tooltips may be used when they provide useful secondary context without adding another permanent visual.
+
+Examples include showing:
+
+```text
+Completed Orders
+Item Sales Value
+Marketplace Share
+```
+
+when hovering over a category.
+
+For delivery geography, a tooltip might include:
+
+```text
+Delivery Eligible Orders
+Late Orders
+Late Delivery Rate
+Avg Delivery Days
+```
+
+This can help users interpret a state-level point without overcrowding the main visual.
+
+Tooltips should contain supporting information, not critical information that is unavailable elsewhere.
+
+---
+
+### 11.11 Report-Page Tooltips
+
+Dedicated report-page tooltips will only be created where they materially improve interpretation.
+
+They are not required merely to demonstrate advanced Power BI functionality.
+
+A standard tooltip may be sufficient for many visuals.
+
+A custom tooltip becomes justified when several related metrics provide useful context for one analytical entity, such as:
+
+```text
+Category
+or
+Customer State
+```
+
+The decision will be made during visual implementation.
+
+---
+
+### 11.12 Drill-Down
+
+Drill-down is appropriate where a genuine hierarchy exists.
+
+Potential example:
+
+```text
+Year
+    ↓
+Month
+```
+
+through `DimDate`.
+
+Seller geography could potentially support:
+
+```text
+Seller State
+    ↓
+Seller City
+```
+
+but city-level drill-down will only be enabled if it contributes to a defined business question.
+
+A hierarchy should not be created merely because two geographic fields exist.
+
+---
+
+### 11.13 Drill-Through
+
+A dedicated drill-through page is **not part of the initial report architecture**.
+
+The four primary report pages are sufficient for the currently defined decision questions.
+
+Drill-through may be introduced only if implementation reveals a genuine need for detailed investigation such as:
+
+```text
+Category Detail
+Customer State Detail
+```
+
+and if the additional page provides information that cannot be communicated clearly within the existing architecture.
+
+Individual order-level drill-through is not currently required for this portfolio report.
+
+---
+
+### 11.14 Navigation
+
+The report should provide simple navigation between the four primary pages.
+
+A consistent page-navigation element may include:
+
+```text
+Executive Overview
+
+Growth & Customers
+
+Delivery & Customer Experience
+
+Commercial Marketplace
+```
+
+Navigation should remain visually consistent across pages.
+
+The user should always understand:
+
+```text
+where they are
+and
+where they can go next
+```
+
+without relying only on Power BI's default page tabs.
+
+---
+
+### 11.15 Navigation Restraint
+
+Navigation should not become a major visual feature.
+
+The report does not require:
+
+```text
+complex menu systems
+multiple hidden navigation layers
+large bookmark-driven interfaces
+```
+
+A simple page-navigation structure is sufficient for four analytical pages.
+
+---
+
+### 11.16 Bookmarks
+
+Bookmarks will not be introduced by default.
+
+They may be useful for a specific requirement such as:
+
+```text
+switching between two meaningful analytical views
+```
+
+but should not be used merely to make the report appear more advanced.
+
+If a bookmark-based interaction requires substantial explanation for users to understand what changed, a simpler design should be preferred.
+
+---
+
+### 11.17 Field Parameters
+
+Field parameters are not required in the initial report.
+
+They can provide useful metric switching, but the current report already has clearly defined business questions and a limited measure set.
+
+Introducing a parameter such as:
+
+```text
+Orders
+Customers
+Items
+Item Sales Value
+```
+
+should only occur if it meaningfully reduces visual duplication without making the analytical context less obvious.
+
+Static, clearly labeled visuals may provide a better stakeholder experience.
+
+---
+
+### 11.18 Visual-Level Filters
+
+Visual-level filters may be used where a visual requires a specific analytical population.
+
+Examples include:
+
+```text
+delivered orders only
+
+delivery-eligible orders only
+
+credit-card records only
+
+top commercially relevant categories
+```
+
+However, where a population represents part of the metric definition, the population should preferably be handled inside an explicit DAX measure rather than relying solely on a hidden visual filter.
+
+For example:
+
+```text
+[Completed Orders]
+```
+
+should contain its delivered-order logic.
+
+The visual should not depend on someone remembering to apply:
+
+```text
+order_status = delivered
+```
+
+manually.
+
+---
+
+### 11.19 Page-Level Filters
+
+Page-level filters may be used when all visuals on a page genuinely require the same context.
+
+For example, a payment-supporting section could use:
+
+```text
+payment_type = credit_card
+```
+
+for installment-specific visuals.
+
+However, a page filter should not be used to silently redefine general KPIs.
+
+Important population differences should remain visible through metric naming or report context.
+
+---
+
+### 11.20 Report-Level Filters
+
+Report-level filters will be used sparingly.
+
+The strongest candidate is the primary analytical-period constraint:
+
+```text
+Is Core Analysis Period = TRUE
+```
+
+for the main stakeholder-facing report experience.
+
+This keeps the dashboard focused on:
+
+```text
+January 2017
+through
+August 2018
+```
+
+while the complete historical data remains in the semantic model for traceability and validation.
+
+Any report-level filter must be documented because it affects multiple pages and measures.
+
+---
+
+### 11.21 Resetting Filters
+
+If report interactions become sufficiently complex that users may lose track of their selections, a simple:
+
+```text
+Reset Filters
+```
+
+mechanism may be introduced.
+
+This could use a bookmark only if necessary.
+
+A reset feature should not be added before there is an actual usability requirement.
+
+---
+
+### 11.22 Default View
+
+The report should open in a meaningful default state.
+
+The preferred initial state is:
+
+```text
+Executive Overview
++
+primary analytical period
++
+no narrow category, seller, state, or payment selection
+```
+
+This ensures that the first view represents the marketplace-level business story rather than an arbitrary filtered segment.
+
+---
+
+### 11.23 Selected-Context Visibility
+
+Where slicers materially change the interpretation of a visual, the selected context should remain visible.
+
+For example:
+
+```text
+Customer State = RJ
+```
+
+should be obvious to the user while viewing delivery results.
+
+Users should not need to inspect hidden filter panes to understand why a metric changed.
+
+This may be achieved through visible slicers, dynamic titles, or simple contextual labels where useful.
+
+---
+
+### 11.24 Dynamic Titles
+
+Dynamic titles may be used where they clarify filter context.
+
+For example:
+
+```text
+Delivery Reliability — Rio de Janeiro
+```
+
+may be more informative than:
+
+```text
+Delivery Reliability
+```
+
+after a state selection.
+
+Dynamic titles will only be used where the context genuinely changes the interpretation.
+
+They should not be added to every visual merely to demonstrate DAX.
+
+---
+
+### 11.25 Cross-Page Consistency
+
+The same business concept should use consistent terminology across pages.
+
+For example:
+
+```text
+Completed Orders
+```
+
+should not appear elsewhere as:
+
+```text
+Delivered Orders
+Completed Transactions
+Successful Orders
+```
+
+unless a genuine metric distinction exists.
+
+Similarly:
+
+```text
+Late Delivery Rate
+Observed Repeat Customer Rate
+Completed Item Sales Value
+```
+
+should retain consistent names throughout the report.
+
+Consistency reduces the cognitive effort required to navigate between pages.
+
+---
+
+### 11.26 Interaction Testing
+
+During report implementation, each page will be tested for:
+
+```text
+slicer behaviour
+cross-filtering
+cross-highlighting
+navigation
+tooltip accuracy
+dynamic titles
+filter reset behaviour where applicable
+```
+
+Testing should confirm both:
+
+```text
+what changes
+```
+
+and:
+
+```text
+what deliberately does not change
+```
+
+after an interaction.
+
+The latter is particularly important because the semantic model intentionally separates several business processes.
+
+---
+
+### 11.27 Mobile Layout
+
+A dedicated mobile report layout is not part of the initial project requirement.
+
+The primary portfolio experience will target standard desktop Power BI report consumption.
+
+A mobile layout should only be created if it can be completed without distracting from:
+
+```text
+semantic-model quality
+DAX validation
+business interpretation
+desktop report usability
+```
+
+It is not required simply to demonstrate another Power BI capability.
+
+---
+
+### 11.28 Accessibility and Usability
+
+Basic report usability should be considered during final implementation.
+
+This includes:
+
+```text
+clear titles
+readable labels
+sufficient visual contrast
+logical reading order
+consistent number formatting
+limited reliance on color alone
+```
+
+The report should remain understandable without requiring advanced Power BI knowledge from the stakeholder.
+
+---
+
+### 11.29 Features Deliberately Not Required
+
+The initial report does not require:
+
+```text
+complex bookmark navigation
+extensive hidden pages
+custom visuals without a clear need
+many-to-many interaction workarounds
+bidirectional relationship tricks
+large numbers of synced slicers
+field parameters solely for demonstration
+mobile-specific report redesign
+```
+
+These features may be useful in other Power BI projects, but they are not automatically indicators of report quality.
+
+The project will demonstrate capability through correct modeling, useful measures, clear visual communication, and controlled interactions.
+
+---
+
+## 11.30 Final Interaction Principle
+
+The report will follow one final rule:
+
+> **Interactivity should help a stakeholder investigate the business without obscuring the population, metric definition, or analytical context behind the result.**
+
+Power BI functionality will therefore be introduced selectively, with analytical clarity taking priority over feature count.
+
+
+## 12. Design Limitations and Implementation Boundaries
+
+The Power BI semantic model and report are designed around the validated capabilities of the Olist dataset and the analytical conventions established earlier in the project.
+
+The reporting layer should extend those findings into a reusable stakeholder-facing model without introducing business concepts that the available data cannot support.
+
+The following limitations and implementation boundaries therefore apply throughout the Power BI phase.
+
+---
+
+### 12.1 Historical Reporting Context
+
+The dataset represents historical marketplace activity rather than a live production reporting system.
+
+The recorded order-purchase period spans:
+
+```text
+04 September 2016
+through
+17 October 2018
+```
+
+The primary continuous analytical period remains:
+
+```text
+January 2017
+through
+August 2018
+```
+
+and the primary matched comparison remains:
+
+```text
+January–August 2017
+versus
+January–August 2018
+```
+
+The Power BI report should therefore describe:
+
+```text
+how marketplace performance developed
+during the observed historical period
+```
+
+rather than imply that it represents current marketplace conditions.
+
+---
+
+### 12.2 Import Mode
+
+The initial semantic model will use:
+
+```text
+Import mode
+```
+
+rather than DirectQuery.
+
+This is appropriate because the project uses:
+
+* a historical dataset;
+* a controlled local MySQL database;
+* modest reporting-table volumes;
+* no real-time reporting requirement.
+
+The implementation does not require additional complexity such as:
+
+```text
+DirectQuery
+incremental refresh
+real-time streaming
+composite models
+```
+
+unless a later requirement provides a genuine reason for introducing them.
+
+---
+
+### 12.3 MySQL Remains the Validated Upstream Source
+
+The validated MySQL database remains the upstream source of truth for the reporting layer.
+
+The intended flow is:
+
+```text
+Validated MySQL database
+        ↓
+BI reporting views
+        ↓
+Power BI semantic model
+        ↓
+DAX measures
+        ↓
+Report visuals
+```
+
+Power BI should not become a second independent data-cleaning environment.
+
+Material source corrections or structural data-quality transformations belong upstream rather than being hidden inside Power Query or DAX.
+
+---
+
+### 12.4 BI Views Are a Reporting Layer, Not a New Analytical Phase
+
+`H2_bi_source_views.sql` will prepare data at safe reporting grains.
+
+Its purpose is to support the semantic model through:
+
+```text
+aggregation
+controlled joins
+business-safe fields
+grain preservation
+```
+
+It does not reopen the SQL analysis completed in Phase 06.
+
+New SQL logic should only be introduced when it is required to implement the approved Power BI model.
+
+The BI layer should not accumulate additional exploratory analysis merely because SQL remains available.
+
+---
+
+### 12.5 Item Sales Value Is Not Marketplace Revenue
+
+The model will use:
+
+```text
+Item Sales Value
+```
+
+for values derived from:
+
+```text
+SUM(order_items.price)
+```
+
+This represents recorded merchandise activity.
+
+The dataset does not provide sufficient information to calculate:
+
+```text
+marketplace revenue
+commission revenue
+gross profit
+net profit
+contribution margin
+```
+
+These terms must therefore not be substituted for item sales value in measures, titles, tooltips, or recommendations.
+
+---
+
+### 12.6 Freight Is Not a Profitability Measure
+
+Freight value is recorded in the dataset, but the project does not know:
+
+* actual logistics cost;
+* seller logistics contribution;
+* marketplace logistics subsidy;
+* carrier economics;
+* fulfillment margin.
+
+Freight should therefore not be subtracted from item sales value to create an inferred profit measure.
+
+No margin or profitability calculation will be created from:
+
+```text
+item price
+-
+freight value
+```
+
+without additional economic information.
+
+---
+
+### 12.7 Customer Retention Is Not Directly Measured
+
+The dataset supports:
+
+```text
+observed completed-order frequency
+observed repeat purchasing
+one-time versus repeat activity
+```
+
+but does not provide a cohort-normalized retention measure by default.
+
+Customers enter the observed dataset at different points in time and therefore have unequal opportunities to make another purchase.
+
+The report may use:
+
+```text
+Observed Repeat Customers
+Observed Repeat Customer Rate
+```
+
+but should not automatically rename those measures:
+
+```text
+Retention Rate
+Customer Retention
+Churn Rate
+```
+
+unless a separate cohort methodology is explicitly developed and validated.
+
+---
+
+### 12.8 Customer Acquisition Economics Are Unavailable
+
+The available data does not contain:
+
+```text
+marketing spend
+acquisition channel
+advertising exposure
+customer acquisition cost
+conversion funnel data
+```
+
+The report can show that marketplace activity expanded through a larger observed customer base and greater transaction volume.
+
+It cannot determine:
+
+```text
+acquisition efficiency
+return on marketing spend
+cost of customer growth
+```
+
+Customer-growth visuals should remain descriptive.
+
+---
+
+### 12.9 Customer Lifetime Value Is Unsupported
+
+The observed transaction history does not provide the information required for a robust customer lifetime value model.
+
+The report will therefore not create:
+
+```text
+Customer Lifetime Value
+Predicted Lifetime Value
+Customer Profitability
+```
+
+simply by summing historical purchases per customer.
+
+Customer merchandise activity may be measured, but it should not be presented as formal CLV.
+
+---
+
+### 12.10 Delivery Analysis Uses Order-Level Outcomes
+
+Delivery performance is measured at order level.
+
+The available dataset provides:
+
+```text
+order purchase timestamp
+customer delivery timestamp
+estimated delivery date
+```
+
+but does not provide sufficiently detailed information about:
+
+```text
+individual seller shipment completion
+carrier route
+warehouse assignment
+fulfillment center
+logistics provider performance
+```
+
+Delivery results therefore describe:
+
+> **the order-level customer delivery experience**
+
+rather than the performance of a specific seller or logistics operator.
+
+---
+
+### 12.11 Delivery Reliability Does Not Establish Cause
+
+The analysis shows that late-delivery incidence increased during the matched comparison while average delivery duration remained broadly stable.
+
+The dataset does not establish whether this resulted from:
+
+```text
+operational variability
+tighter delivery estimates
+geographic mix
+order mix
+marketplace expansion
+or another factor
+```
+
+Power BI may communicate the pattern but should not assign a causal explanation without additional evidence.
+
+---
+
+### 12.12 Reviews Represent Order-Level Experience
+
+Reviews operate at order level.
+
+The representative-review convention selects one review per order using the latest:
+
+```text
+review_answer_timestamp
+```
+
+Category review analysis then associates that review once with each distinct category appearing in the order.
+
+Therefore review measures should be interpreted as:
+
+```text
+order-level customer experience
+```
+
+or:
+
+```text
+review outcomes for orders containing a category
+```
+
+They should not be presented as:
+
+```text
+product rating
+seller rating
+category product-quality score
+```
+
+without supporting data at those grains.
+
+---
+
+### 12.13 Review Association Does Not Establish Causation
+
+Late deliveries are strongly associated with weaker review outcomes.
+
+This does not prove that lateness alone caused those reviews.
+
+Customer satisfaction may also be influenced by factors such as:
+
+```text
+product condition
+product expectations
+seller communication
+service quality
+other order experiences
+```
+
+that are not fully represented in the dataset.
+
+The report should therefore use association language.
+
+---
+
+### 12.14 Category Profitability Is Unknown
+
+Category reporting supports:
+
+```text
+item sales value
+item count
+completed orders
+growth
+marketplace share
+review context
+```
+
+but not category profitability.
+
+The dataset does not include:
+
+```text
+cost of goods
+commission rates
+promotional spend
+return cost
+category gross margin
+```
+
+A large or fast-growing category should therefore not automatically be described as the most profitable category.
+
+---
+
+### 12.15 Small-Base Category Growth Requires Caution
+
+Percentage growth can become very large when the prior-period value is small.
+
+Category analysis should therefore consider:
+
+```text
+current scale
+absolute growth contribution
+percentage growth
+marketplace-share movement
+```
+
+together.
+
+Growth percentages with a zero prior-period denominator should return:
+
+```text
+BLANK
+```
+
+rather than an artificial percentage.
+
+---
+
+### 12.16 Seller Concentration Is Descriptive
+
+The model supports analysis of:
+
+```text
+active sellers
+seller merchandise activity
+seller concentration
+seller geography
+```
+
+but concentration itself is not automatically a business problem.
+
+The dataset does not contain:
+
+```text
+seller operating cost
+seller margin
+inventory depth
+contract terms
+capacity
+seller satisfaction
+```
+
+The report can identify uneven productive supply but cannot determine whether the observed concentration is optimal or harmful.
+
+---
+
+### 12.17 Seller Participation Is Not Seller Churn
+
+Sellers appearing in only one matched period cannot automatically be classified as:
+
+```text
+new
+acquired
+churned
+exited
+```
+
+The dataset does not provide onboarding dates or reasons for inactivity.
+
+The report should therefore describe:
+
+```text
+seller participation
+```
+
+rather than infer seller lifecycle events.
+
+---
+
+### 12.18 Seller Delivery and Review Attribution Is Excluded
+
+Order-level delivery and review outcomes will not be assigned to sellers.
+
+This is particularly important for multi-seller orders.
+
+The semantic model will therefore not create:
+
+```text
+Seller Late Delivery Rate
+Seller Review Score
+Seller Satisfaction Rate
+```
+
+from the available order-level outcomes.
+
+This limitation is intentional and protects the model from unsupported attribution.
+
+---
+
+### 12.19 Payment Value Is Not Merchandise Revenue
+
+`payment_value` represents the recorded payment amount.
+
+It is analytically distinct from:
+
+```text
+item_sales_value
+```
+
+The two values will remain in separate facts and measures.
+
+They should not be treated as interchangeable marketplace revenue metrics.
+
+---
+
+### 12.20 Payment Economics Are Unavailable
+
+The dataset does not contain:
+
+```text
+processing fees
+financing cost
+interest subsidy
+credit risk
+fraud loss
+payment conversion impact
+```
+
+The report can describe:
+
+```text
+payment-method usage
+payment value
+multi-payment behaviour
+installment behaviour
+```
+
+but cannot determine which payment method or installment structure is most profitable.
+
+---
+
+### 12.21 Installment Behaviour Is Associational
+
+Higher installment bands are associated with higher average payment values.
+
+This does not establish that increasing installment availability caused customers to spend more.
+
+Higher-value purchases may simply be more likely to use additional installments.
+
+The report should preserve this distinction.
+
+---
+
+### 12.22 Geographic Analysis Is Primarily State-Level
+
+The main reporting geography will remain at state level.
+
+Raw geolocation data will not be directly integrated into the semantic model because the source contains:
+
+```text
+multiple observations per ZIP prefix
+incomplete marketplace coverage
+```
+
+and state-level geography already supports the defined business questions.
+
+More precise location analysis would require an additional controlled geographic modeling decision.
+
+---
+
+### 12.23 Customer Counts Across States Are Non-Additive
+
+A small number of `customer_unique_id` values appear across multiple states.
+
+Therefore:
+
+```text
+DISTINCTCOUNT(customer_unique_id)
+```
+
+within each state is valid.
+
+However:
+
+> **The sum of state-level distinct-customer counts may exceed the marketplace-wide distinct-customer count.**
+
+Power BI visuals should not imply that geographic customer counts can always be summed across states.
+
+---
+
+### 12.24 Fact Tables Represent Different Business Processes
+
+The four fact tables represent:
+
+```text
+orders
+order-category activity
+order-seller activity
+payment records
+```
+
+at different grains.
+
+Measures from these facts may be compared conceptually but should not be numerically combined without a valid business definition.
+
+For example:
+
+```text
+Completed Item Sales Value
+Category Item Sales Value
+Seller Item Sales Value
+```
+
+may reconcile to the same underlying merchandise total.
+
+They are alternative analytical representations of that activity, not three values that should be added together.
+
+---
+
+### 12.25 Dimension Filters Have Deliberate Scope
+
+Not every dimension filters every fact.
+
+For example:
+
+```text
+Category
+→ category fact only
+
+Seller
+→ seller fact only
+
+Customer State
+→ order fact only
+```
+
+This means a category selection will not automatically convert marketplace-wide, seller, or payment measures into category-specific metrics.
+
+This is an intentional semantic boundary rather than a model limitation to be repaired with bidirectional relationships.
+
+---
+
+### 12.26 Model Simplicity Is Intentional
+
+The initial model will contain:
+
+```text
+4 fact tables
+4 dimensions
+7 relationships
+```
+
+No additional table should be introduced unless it solves a defined reporting or semantic requirement.
+
+The project does not need to demonstrate complexity through:
+
+```text
+many-to-many relationships
+bridge tables without need
+calculation groups without need
+large numbers of calculated tables
+bidirectional filtering
+```
+
+A small understandable model is preferred.
+
+---
+
+### 12.27 Power BI Features Are Not Project Objectives
+
+The success of the Power BI phase will not be evaluated by the number of product features demonstrated.
+
+Features such as:
+
+```text
+bookmarks
+field parameters
+drill-through
+custom tooltips
+custom visuals
+mobile layout
+```
+
+may be used where they improve the report.
+
+They are not mandatory requirements.
+
+The primary Power BI capabilities demonstrated by the project are:
+
+```text
+semantic modeling
+relationship design
+DAX measures
+filter context
+business reporting
+interactive analysis
+visual communication
+model validation
+```
+
+---
+
+### 12.28 Report Scope May Be Refined During Implementation
+
+The four-page architecture represents the approved baseline:
+
+```text
+Executive Overview
+Growth & Customers
+Delivery & Customer Experience
+Commercial Marketplace
+```
+
+Exact visual composition remains flexible.
+
+A planned visual may be removed if:
+
+* it duplicates another visual;
+* it does not improve the business story;
+* it creates unnecessary density;
+* its analytical interpretation is weaker than expected.
+
+A new visual may be introduced if implementation reveals a genuine reporting need supported by validated data.
+
+Changes should improve the decision experience rather than expand the report for its own sake.
+
+---
+
+### 12.29 Design Changes During Implementation
+
+`H1_power_bi_design.md` represents the semantic-model and reporting baseline.
+
+It is not intended to prevent justified implementation changes.
+
+If H2 or Power BI implementation exposes a genuine issue, the process will be:
+
+```text
+Implementation evidence
+        ↓
+identify design issue
+        ↓
+determine correct layer
+        ↓
+revise design if justified
+        ↓
+document the final decision
+```
+
+Examples include:
+
+```text
+unexpected grain issue
+dimension key collision
+relationship limitation
+unnecessary model table
+measure requirement not anticipated
+```
+
+Design changes should be evidence-driven rather than made simply because another approach appears more sophisticated.
+
+---
+
+### 12.30 Earlier Validated Phases Remain Frozen
+
+Phase 09 should not reopen completed data-preparation, database, or SQL-analysis work unless implementation reveals a specific factual or technical contradiction.
+
+A Power BI result that differs from SQL should first trigger investigation of:
+
+```text
+filter context
+DAX
+relationships
+BI source views
+```
+
+before questioning validated upstream analysis.
+
+This preserves project traceability and prevents downstream implementation from casually redefining earlier business logic.
+
+---
+
+### 12.31 Final Design Boundary
+
+The Power BI phase will follow one final boundary:
+
+> **The semantic model may reorganize validated data for reporting, DAX may calculate reusable context-aware business measures, and visuals may communicate those measures interactively, but none of these layers should silently create business meaning that the underlying evidence does not support.**
+
+This principle keeps the Power BI implementation consistent with the evidence-first approach used throughout the project.
 
 
 
