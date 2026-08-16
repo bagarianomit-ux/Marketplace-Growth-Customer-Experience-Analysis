@@ -170,21 +170,15 @@ The planned model is:
 ```text
                          DimDate
                             |
-          -------------------------------------
-          |                 |                 |
-          v                 v                 v
-   bi_fact_orders   bi_fact_order_categories   bi_fact_seller_orders
-          |                 |                 |
-      ---------             |                 |
-      |       |             v                 v
-      v       v        DimCategory         DimSeller
-DimCustomer  DimCustomerState
-
-
-                         DimDate
-                            |
-                            v
-                     bi_fact_payments
+          -----------------------------------------
+          |                 |           |         |
+          v                 v           v         v
+   bi_fact_orders   bi_fact_order_  bi_fact_   bi_fact_
+                    categories      seller_     payments
+                                    orders
+          |                 |           |
+          v                 v           v
+ DimCustomerState      DimCategory   DimSeller
 
 
 ## 6. Fact and Dimension Specifications
@@ -4700,13 +4694,11 @@ This preserves the validated SQL severity convention.
 
 ## 8.7 Category Measures
 
-Category measures will come from:
+Category measures will use `bi_fact_order_categories`.
 
-```text
-bi_fact_order_categories
-```
+Commercial category measures will use delivered activity, consistent with the primary F5 commercial population.
 
-and normally use delivered activity for commercial reporting.
+Category review measures will use the retained representative-review order-category population established during SQL analysis and will not automatically be restricted to delivered orders.
 
 ### Required Measures
 
@@ -7803,9 +7795,11 @@ Important population differences should remain visible through metric naming or 
 
 ### 11.20 Report-Level Filters
 
-Report-level filters will be used sparingly.
+Hidden report-level filters will generally be avoided.
 
-The strongest candidate is the primary analytical-period constraint:
+The primary continuous period of January 2017 through August 2018 should be applied to trend visuals or analytical pages where comparability requires it, while the complete recorded population remains available for overall KPIs and validation.
+
+Matched-period comparisons will continue to use explicit DAX measures rather than relying on report-level date filters.
 
 ```text
 Is Core Analysis Period = TRUE
